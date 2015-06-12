@@ -107,7 +107,16 @@ class VgOps(object):
             self.module.fail_json(msg=msg)
         return value
 
+    def compute_size(self):
+        self.stripe_unit_size = self.validated_params('stripesize')
+        self.diskcount = self.validated_params('diskcount')
+        pe_size = self.stripe_unit_size * int(self.diskcount)
+        return pe_size
+
     def vg_create(self):
+        self.compute = self.validated_params('compute')
+        if self.compute not in ['jbod']:
+            self.options += ' -s %sK ' % self.compute_size()
         opts = " %s %s %s" % (self.vgname, self.options, self.disks)
         return self.run_command(self.op, opts)
 
@@ -130,6 +139,9 @@ if __name__ == '__main__':
             vgname=dict(type='str'),
             disks=dict(),
             options=dict(type='str'),
+            diskcount=dict(),
+            compute=dict(),
+            stripesize=dict()
         ),
     )
 

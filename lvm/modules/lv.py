@@ -129,7 +129,6 @@ error = False
 class LvOps(object):
 
     def __init__(self, module):
-        self.dataalign = 1280  # in KB
         self.module = module
         self.action = self.validated_params('action')
         self.vgname = self.validated_params('vgname')
@@ -164,6 +163,16 @@ class LvOps(object):
                     metadatasize = floor(floor(METADATA_SIZE_MB) * 1024)
                 pool_sz = floor(pv_size * 1024) - metadatasize
                 return metadatasize, pool_sz
+            else:
+                self.module.fail_json(msg="PV %s does not exist" % pv_name)
+
+    def get_thin_pool_chunk_sz(self):
+        diskcount = self.validated_params('diskcount')
+        chunksize = {'raid10': self.stripe_unit_size * int(diskcount),
+                     'raid6': 256,
+                     'jbod': 256
+                   }[self.compute_type]
+        return chunksize
 
     def validated_params(self, opt):
         value = self.module.params[opt]
@@ -177,36 +186,36 @@ class LvOps(object):
         return self.module.run_command(cmd)
 
     def create(self):
-        lvtype = self.validated_params('lvtype')
+        self.lvtype = self.validated_params('lvtype')
         lvname = self.validated_params('lvname')
-        compute = self.module.params['compute'] or ''
-        if lvtype in ['virtual']:
+        self.compute_type = self.module.params['compute'] or ''
+        if self.lvtype in ['virtual']:
             poolname = self.validated_params('poolname')
         else:
             poolname = ''
-        if compute == 'rhs':
+        if self.compute_type:
             metadatasize, pool_sz = self.compute()
-        else:
-            metadatasize = self.validated_params('metadatasize')
-            pools_sz = self.validated_params('poolsize')
         if not error:
             options = {'thin': ' -L %sK -n %s %s' % (metadatasize,
-                                                     lvname, self.vgname),
+                                             lvname, self.vgname),
                        'thick': ' -L %sK -n %s %s' % (pool_sz,
-                                                      lvname, self.vgname),
+                                                    lvname, self.vgname),
                        'virtual': ' -V %sK -T /dev/%s/%s -n %s'
                        % (pool_sz, self.vgname, poolname, lvname)
-                       }[lvtype]
+                       }[self.lvtype]
             return self.run_command('lvcreate', options)
         err = "%s Volume Group Does Not Exist!" % self.vgname
         return 1, 0, err
 
     def convert(self):
         thinpool = self.validated_params('thinpool')
+        self.compute_type = self.validated_params('compute')
+        self.stripe_unit_size = self.validated_params('stripesize')
         poolmetadata = self.module.params['poolmetadata'] or ''
         poolmetadataspare = self.module.params['poolmetadataspare'] or ''
-        options = ' -c %s --yes -ff --thinpool %s --poolmetadata %s ' \
-            '--poolmetadataspare %s' % (self.dataalign, thinpool,
+        chunksize = self.get_thin_pool_chunk_sz()
+        options = ' --yes -ff -c %s --thinpool %s --poolmetadata %s ' \
+            '--poolmetadataspare %s' % (chunksize, thinpool,
                                         poolmetadata, poolmetadataspare)
         return self.run_command('lvconvert', options)
 
@@ -234,7 +243,9 @@ def main():
             poolmetadataspare=dict(),
             poolname=dict(),
             zero=dict(),
-            compute=dict()
+            compute=dict(),
+            diskcount=dict(),
+            stripesize=dict()
         ),
     )
 

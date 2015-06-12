@@ -7,6 +7,8 @@
   tasks:
   - name: Create volume group on the disks
     vg: action="create" disks={{ item.brick }}
-        options="--physicalextentsize 128k"
         vgname={{ item.vg }}
+        diskcount="{{ diskcount }}"
+        compute="{{ disktype }}"
+        stripesize="{{ stripesize }}"
     with_items: vgnames
